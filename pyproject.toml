@@ -2,10 +2,9 @@
 requires = ["setuptools>=61.0", "setuptools_scm[toml]>=6.2"]
 build-backend = "setuptools.build_meta"
 
-
 [project]
 name = "slurm-job-resource-monitor"
-dynamic = ["version", "readme"]
+dynamic = ["version", "readme", "dependencies"]
 authors = [
   { name="Tobias Schanz", email="tobias.machnitzki@hereon.de" },
 ]
@@ -23,7 +22,7 @@ classifiers = [
 
 
 [project.scripts]
-my-client = "slurm_job_resource_monitor.job_monitor:__main__"
+slurm_job_monitor = "slurm_job_resource_monitor.job_monitor:cli_entry"
 
 
 [tool.setuptools]
@@ -36,3 +35,5 @@ write_to = "slurm_job_resource_monitor/_version.py"
 
 [tool.setuptools.dynamic]
 readme = {file = ["README.md"]}
+dependencies = {file = ["requirements.txt"]}
+

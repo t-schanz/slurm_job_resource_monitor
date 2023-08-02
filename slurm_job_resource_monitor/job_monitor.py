@@ -261,6 +261,13 @@ def main():
     time.sleep(2)
 
 
+def cli_entry():
+    """Entry point for the CLI."""
+    print("Starting")
+    while True:
+        main()
+
+
 if __name__ == "__main__":
     print("Starting")
     while True:
