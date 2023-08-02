@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=61.0", "setuptools_scm[toml]>=6.2"]
+build-backend = "setuptools.build_meta"
+
+
+[project]
+name = "slurm-job-resource-monitor"
+dynamic = ["version", "readme"]
+authors = [
+  { name="Tobias Schanz", email="tobias.machnitzki@hereon.de" },
+]
+description = "Command line tool for monitoring slurm jobs on a linux system."
+requires-python = ">=3.9"
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Operating System :: POSIX :: Linux",
+]
+
+
+[project.urls]
+"Homepage" = "https://github.com/tmachnitzki/slurm_job_resource_monitor"
+"Bug Tracker" = "https://github.com/tmachnitzki/slurm_job_resource_monitor/issues"
+
+
+[project.scripts]
+my-client = "slurm_job_resource_monitor.job_monitor:__main__"
+
+
+[tool.setuptools]
+packages = ["slurm_job_resource_monitor"]
+
+
+[tool.setuptools_scm]
+write_to = "slurm_job_resource_monitor/_version.py"
+
+
+[tool.setuptools.dynamic]
+readme = {file = ["README.md"]}
