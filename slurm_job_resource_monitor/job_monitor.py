@@ -212,15 +212,15 @@ def create_rich_table(all_job_df: pd.DataFrame, display_gpu_only: bool = False) 
     now = dt.now().strftime("%H:%M:%S")
     table = Table(title=f"Slurm Job Usage Monitor - {now}")
 
-    table.add_column("SlurmJobID", justify="left", style="cyan", no_wrap=True)
+    table.add_column("SLURM JOB ID", justify="left", style="cyan", no_wrap=True)
     table.add_column("Node", justify="center", style="cyan", no_wrap=True)
-    table.add_column("GPU", justify="center", style="cyan", no_wrap=True)
+    table.add_column("GPU ID", justify="center", style="cyan", no_wrap=True)
     table.add_column("PID", justify="center", style="cyan", no_wrap=True)
     table.add_column("COMMAND", justify="left", style="cyan", no_wrap=False)
-    table.add_column("CPU_USAGE", justify="center", style="cyan", no_wrap=True)
-    table.add_column("CPU_MEM", justify="center", style="cyan", no_wrap=True)
-    table.add_column("GPU_USAGE", justify="center", style="cyan", no_wrap=True)
-    table.add_column("GPU_MEM", justify="center", style="cyan", no_wrap=True)
+    table.add_column("CPU USAGE", justify="center", style="cyan", no_wrap=True)
+    table.add_column("CPU MEM", justify="center", style="cyan", no_wrap=True)
+    table.add_column("GPU USAGE", justify="center", style="cyan", no_wrap=True)
+    table.add_column("GPU MEM", justify="center", style="cyan", no_wrap=True)
 
     last_node = "this_is_not_a_node"
     for _, row in all_job_df.iterrows():
