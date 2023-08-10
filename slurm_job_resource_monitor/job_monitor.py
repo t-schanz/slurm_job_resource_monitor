@@ -205,6 +205,10 @@ def create_rich_table(all_job_df: pd.DataFrame, display_gpu_only: bool = False) 
         all_job_df (pd.Dataframe): The job df containing all the job info.
         display_gpu_only (bool, optional): If True, only jobs with gpu usage will be displayed. Defaults to False.
     """
+
+    # convert all values to string with 2 decimal places
+    all_job_df = all_job_df.applymap(lambda x: f"{x:.2f}" if isinstance(x, float) else x)
+
     now = dt.now().strftime("%H:%M:%S")
     table = Table(title=f"Slurm Job Usage Monitor - {now}")
 
