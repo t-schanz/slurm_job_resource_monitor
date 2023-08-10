@@ -336,15 +336,21 @@ def dict_to_df(all_job_dict: dict) -> pandas.DataFrame:
                 if job_dict[node]["GPU usage"] is not None:
                     if pid in job_dict[node]["GPU usage"]:
                         for gpu_id in job_dict[node]["GPU usage"][pid].keys():
-                            gpu_usage_df = gpu_usage_df.append(
-                                {
-                                    "job_id": job_id,
-                                    "node": node,
-                                    "pid": pid,
-                                    "gpu_id": gpu_id,
-                                    "gpu_usage": float(job_dict[node]["GPU usage"][pid][gpu_id]["sm"]),
-                                    "gpu_mem": float(job_dict[node]["GPU usage"][pid][gpu_id]["mem"]),
-                                },
+                            gpu_usage_df = pd.concat(
+                                [
+                                    gpu_usage_df,
+                                    pd.DataFrame(
+                                        {
+                                            "job_id": job_id,
+                                            "node": node,
+                                            "pid": pid,
+                                            "gpu_id": gpu_id,
+                                            "gpu_usage": float(job_dict[node]["GPU usage"][pid][gpu_id]["sm"]),
+                                            "gpu_mem": float(job_dict[node]["GPU usage"][pid][gpu_id]["mem"]),
+                                        },
+                                        index=[0],
+                                    ),
+                                ],
                                 ignore_index=True,
                             )
 
