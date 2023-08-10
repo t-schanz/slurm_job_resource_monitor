@@ -15,6 +15,7 @@ import pandas as pd
 import paramiko
 from rich import get_console, print
 from rich.table import Table
+import json
 
 
 def get_args(parser: argparse.ArgumentParser):
@@ -31,17 +32,9 @@ def get_args(parser: argparse.ArgumentParser):
                              "Possible options are `mean`, `max`, `min`.")
     parser.add_argument("--min-cpu-usage", type=float, default=0.1,
                         help="Minimum CPU usage processes have to have to be shown.")
-
+    parser.add_argument("--debug", action="store_true",
+                        help="Save all kinds of dictionaries to files to be inspected.")
     return parser.parse_args()
-
-
-def get_slurm_job_info_dict(job_id: str) -> dict:
-    """Get the job info from slurm."""
-    job_info = subprocess.run(["scontrol", "show", "job", job_id, "-o", "-d"], capture_output=True, text=True)
-    job_info = job_info.stdout.split(" ")
-    job_info = [x.split("=") for x in job_info if "=" in x]
-    job_info = {x[0]: x[1] for x in job_info}
-    return job_info
 
 
 def get_gpu_usage_of_current_node(this_node: paramiko.SSHClient) -> Optional[dict]:
@@ -270,10 +263,18 @@ def group_cpu_usage_by_command(all_job_dict, reduction="mean") -> dict:
     return grouped_cpu_usage
 
 
-def main(username, job_id, display_gpu_only, group_by_cmd, min_cpu_usage, refresh_rate):
+def dump_json(content: dict, filename: str):
+    with open(filename, "w") as f:
+        json.dump(content, f, indent=4)
+
+
+def main(username, job_id, display_gpu_only, group_by_cmd, min_cpu_usage, refresh_rate, debug_mode):
     """Main function."""
 
     all_jobs = get_all_jobs_by_user(username)
+
+    if debug_mode:
+        dump_json(all_jobs, "all_jobs.json")
 
     # if a job id is given, only keep that job
     if job_id is not None:
@@ -282,17 +283,18 @@ def main(username, job_id, display_gpu_only, group_by_cmd, min_cpu_usage, refres
             print(f"No job with id {job_id} found.")
             time.sleep(refresh_rate)
 
+    if debug_mode:
+        dump_json(all_jobs, "all_jobs.json")
+
     # only keep jobs that are running
     all_jobs = {k: v for k, v in all_jobs.items() if v["STATE"] == "RUNNING"}
+
+    if debug_mode:
+        dump_json(all_jobs, "all_jobs.json")
 
     # if no jobs are running print a message and exit
     if len(all_jobs) == 0:
         print("No jobs are running.")
-
-    # get the job info from slurm
-    slurm_infos = {}
-    for job_id in all_jobs.keys():
-        slurm_infos[job_id] = get_slurm_job_info_dict(job_id)
 
     # for each job, get the nodes that it is running on
     for job_id, job_info in all_jobs.items():
@@ -318,9 +320,15 @@ def main(username, job_id, display_gpu_only, group_by_cmd, min_cpu_usage, refres
             # close the ssh connection
             ssh.close()
 
+    if debug_mode:
+        dump_json(all_jobs, "all_jobs.json")
+
     # group the CPU usage by command
     if group_by_cmd is not None:
         all_jobs = group_cpu_usage_by_command(all_jobs, reduction=group_by_cmd)
+
+    if debug_mode:
+        dump_json(all_jobs, "all_jobs.json")
 
     # convert the dataframe to a rich table
     table = create_rich_table(all_jobs, display_gpu_only=display_gpu_only)
@@ -344,6 +352,7 @@ def cli_entry():
     display_gpu_only = args.gpu_only
     group_by_cmd = args.group_by_cmd
     min_cpu_usage = args.min_cpu_usage
+    debug_mode = args.debug
 
     print("Starting")
     while True:
@@ -352,7 +361,8 @@ def cli_entry():
              display_gpu_only=display_gpu_only,
              group_by_cmd=group_by_cmd,
              min_cpu_usage=min_cpu_usage,
-             refresh_rate=refresh_rate)
+             refresh_rate=refresh_rate,
+             debug_mode=debug_mode)
 
 
 if __name__ == "__main__":
