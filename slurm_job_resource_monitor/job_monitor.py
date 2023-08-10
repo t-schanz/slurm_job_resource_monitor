@@ -235,10 +235,10 @@ def create_rich_table(all_job_df: pd.DataFrame, display_gpu_only: bool = False) 
             row["gpu_id"],
             row["pid"],
             row["command"],
-            row["cpu_usage"] + " %",
-            row["cpu_mem"] + " %",
-            row["gpu_usage"] + " %",
-            row["gpu_mem"] + " %",
+            row["cpu_usage"] + " %" if row["cpu_usage"] != "N/A" else "N/A",
+            row["cpu_mem"] + " %" if row["cpu_mem"] != "N/A" else "N/A",
+            row["gpu_usage"] + " %" if row["gpu_usage"] != "N/A" else "N/A",
+            row["gpu_mem"] + " %" if row["gpu_usage"] != "N/A" else "N/A",
         )
         last_node = row["node"]
 
