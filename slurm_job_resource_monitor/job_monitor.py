@@ -387,6 +387,8 @@ def main(
     # if no jobs are running print a message and exit
     if len(all_jobs) == 0:
         print("No jobs are running.")
+        time.sleep(refresh_rate)
+        return
 
     # for each job, get the nodes that it is running on
     for job_id, job_info in all_jobs.items():
