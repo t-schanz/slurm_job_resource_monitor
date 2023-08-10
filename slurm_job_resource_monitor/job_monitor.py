@@ -1,43 +1,61 @@
 """This is a command line tool to monitor the status of all your slurm jobs.
 
 It uses rich to display the status of all jobs in a table. It will ssh into all allocated nodes and get CPU and GPU
-usage
+usage.
 """
 
 import argparse
 import getpass
+import json
 import subprocess
 import time
 from datetime import datetime as dt
-from typing import Optional
 
+import numpy as np
+import pandas
 import pandas as pd
 import paramiko
 from rich import get_console, print
 from rich.table import Table
-import json
 
 
 def get_args(parser: argparse.ArgumentParser):
-    parser.add_argument("--username", type=str, default=getpass.getuser(),
-                        help="Username for ssh login. If not specified, the current username will be used.")
-    parser.add_argument("--job-id", type=str, default=None,
-                        help="Job ID to monitor. If not specified, all jobs will be monitored.")
-    parser.add_argument("--refresh-rate", type=int, default=5,
-                        help="Refresh rate in seconds.")
-    parser.add_argument("--gpu-only", action="store_true",
-                        help="Only show jobs that use GPUs.")
-    parser.add_argument("--group-by-cmd", type=str, default=None,
-                        help="Group jobs per node that have the same command. If not specified all jobs are displayed. "
-                             "Possible options are `mean`, `max`, `min`.")
-    parser.add_argument("--min-cpu-usage", type=float, default=0.1,
-                        help="Minimum CPU usage processes have to have to be shown.")
-    parser.add_argument("--debug", action="store_true",
-                        help="Save all kinds of dictionaries to files to be inspected.")
+    parser.add_argument(
+        "--username",
+        type=str,
+        default=getpass.getuser(),
+        help="Username for ssh login. If not specified, the current username will be used.",
+    )
+    parser.add_argument(
+        "--job-id",
+        type=str,
+        default=None,
+        help="Job ID to monitor. If not specified, all jobs will be monitored.",
+    )
+    parser.add_argument("--refresh-rate", type=int, default=5, help="Refresh rate in seconds.")
+    parser.add_argument("--gpu-only", action="store_true", help="Only show jobs that use GPUs.")
+    parser.add_argument(
+        "--group-by-cmd",
+        type=str,
+        default=None,
+        help="Group jobs per node that have the same command. If not specified all jobs are displayed. "
+        "Possible options are `mean`, `max`, `min`.",
+    )
+    parser.add_argument(
+        "--min-cpu-usage",
+        type=float,
+        default=0.1,
+        help="Minimum CPU usage processes have to have to be shown.",
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Save all kinds of dictionaries to files to be inspected.",
+    )
     return parser.parse_args()
 
 
-def get_gpu_usage_of_current_node(this_node: paramiko.SSHClient) -> Optional[dict]:
+def get_gpu_usage_of_current_node(this_node: paramiko.SSHClient) -> dict:
     """Get the GPU usage and memory usage of all GPUs seperated by process ID on the current node, using nvidia-smi.
 
     Args:
@@ -109,8 +127,7 @@ def get_cpu_usage_of_current_node(user_id: str, this_node: paramiko.SSHClient, m
         # on the last key combine all remaining values into one
         for key in cpu_keys:
             if key == "COMMAND":
-                return_usage[usage[1]][key] = " ".join(usage[cpu_keys.index(key) :]).replace(
-                    "\\_ ", "").strip()
+                return_usage[usage[1]][key] = " ".join(usage[cpu_keys.index(key) :]).replace("\\_ ", "").strip()
             else:
                 return_usage[usage[1]][key] = usage[cpu_keys.index(key)]
 
@@ -140,7 +157,13 @@ def get_all_jobs_by_user(user_id: str) -> dict:
             contains the job info using slurm's format heads as keys.
     """
     all_jobs = subprocess.run(
-        ["squeue", "-u", user_id, "--format", "%.40i %.40P %.40j %.40u %.40T %.40M %.40l %.40D %R"],
+        [
+            "squeue",
+            "-u",
+            user_id,
+            "--format",
+            "%.40i %.40P %.40j %.40u %.40T %.40M %.40l %.40D %R",
+        ],
         capture_output=True,
         text=True,
     )
@@ -157,7 +180,7 @@ def get_all_jobs_by_user(user_id: str) -> dict:
     return return_jobs
 
 
-def create_rich_table(all_job_dict: dict, display_gpu_only: bool = False) -> Table:
+def create_rich_table(all_job_df: pd.DataFrame, display_gpu_only: bool = False) -> Table:
     """
     Create a rich table Like the following:
 
@@ -179,7 +202,7 @@ def create_rich_table(all_job_dict: dict, display_gpu_only: bool = False) -> Tab
 
 
     Args:
-        all_job_dict (dict): The job dict containing all the job info.
+        all_job_df (pd.Dataframe): The job df containing all the job info.
         display_gpu_only (bool, optional): If True, only jobs with gpu usage will be displayed. Defaults to False.
     """
     now = dt.now().strftime("%H:%M:%S")
@@ -195,72 +218,88 @@ def create_rich_table(all_job_dict: dict, display_gpu_only: bool = False) -> Tab
     table.add_column("GPU_USAGE", justify="center", style="cyan", no_wrap=True)
     table.add_column("GPU_MEM", justify="center", style="cyan", no_wrap=True)
 
-    for job_id, job_dict in all_job_dict.items():
-        table.add_section()
-        for node in job_dict["Nodes"]:
-            node = node.split("(")[0]
-            for pid in job_dict[node]["CPU usage"]:
-                gpu_usage = "N/A"
-                gpu_mem = "N/A"
-                gpu_id = "N/A"
-                if job_dict[node]["GPU usage"] is not None:
-                    if pid in job_dict[node]["GPU usage"]:
-                        for gpu_id in job_dict[node]["GPU usage"][pid].keys():
-                            gpu_usage = job_dict[node]["GPU usage"][pid][gpu_id]["sm"]
-                            gpu_mem = job_dict[node]["GPU usage"][pid][gpu_id]["mem"]
+    last_node = "this_is_not_a_node"
+    for _, row in all_job_df.iterrows():
+        if display_gpu_only and row["gpu_usage"] == "N/A":
+            continue
+        if last_node != row["node"]:
+            table.add_section()
 
-                            table.add_row(
-                                job_id,
-                                node,
-                                gpu_id,
-                                pid,
-                                job_dict[node]["CPU usage"][pid]["COMMAND"],
-                                job_dict[node]["CPU usage"][pid]["%CPU"] + " %",
-                                job_dict[node]["CPU usage"][pid]["%MEM"] + " %",
-                                gpu_usage + " %",
-                                gpu_mem + " %",
-                            )
-                    else:
-                        if not display_gpu_only:
-                            table.add_row(
-                                job_id,
-                                node,
-                                gpu_id,
-                                pid,
-                                job_dict[node]["CPU usage"][pid]["COMMAND"],
-                                job_dict[node]["CPU usage"][pid]["%CPU"] + " %",
-                                job_dict[node]["CPU usage"][pid]["%MEM"] + " %",
-                                gpu_usage,
-                                gpu_mem,
-                            )
+        table.add_row(
+            row["job_id"],
+            row["node"],
+            row["gpu_id"],
+            row["pid"],
+            row["command"],
+            row["cpu_usage"],
+            row["cpu_mem"],
+            row["gpu_usage"],
+            row["gpu_mem"],
+        )
+        last_node = row["node"]
 
     return table
 
 
-def group_cpu_usage_by_command(all_job_dict, reduction="mean") -> dict:
-    """Group the CPU usage by command and take the mean"""
+def group_cpu_usage_by_command(all_job_df: pandas.DataFrame, reduction="mean") -> pandas.DataFrame:
+    """Group the CPU usage by command and take the reduction of the CPU usage and CPU memory.
 
-    # create a pandas dataframe from the all_job_dict
-    df = pd.DataFrame.from_dict(
+    Return:
+        dict: A dictionary containing the grouped CPU usage in the same format as the all_job_dict.
+    """
+
+    # split the df into two dfs, one with gpu usage and one without
+    gpu_usage_df = all_job_df[all_job_df["gpu_usage"] != "N/A"]
+    no_gpu_usage_df = all_job_df[all_job_df["gpu_usage"] == "N/A"]
+
+    grouped_cpu_usage = no_gpu_usage_df.groupby("command").agg(
         {
-            (i, j, k): all_job_dict[i][j][k]
-            for i in all_job_dict.keys()
-            for j in all_job_dict[i].keys()
-            for k in all_job_dict[i][j].keys()
-        },
-        orient="index",
-    ).reset_index()
-    df = df.rename(columns={"level_0": "job_id", "level_1": "node", "level_2": "pid"})
-    df = df[["job_id", "node", "pid", "COMMAND", "%CPU", "%MEM"]]
-    df["%CPU"] = df["%CPU"].str.replace("%", "").astype(float)
-    df["%MEM"] = df["%MEM"].str.replace("%", "").astype(float)
+            "cpu_usage": reduction,
+            "cpu_mem": reduction,
+            "job_id": "first",
+            "node": "first",
+            "pid": "first",
+        }
+    )
+    grouped_cpu_usage = grouped_cpu_usage.reset_index()
+    grouped_cpu_usage = grouped_cpu_usage.sort_values(by=["job_id", "node"])
 
-    # group by command and apply the reduction
-    grouped_cpu_usage = df.groupby("COMMAND").agg(reduction).reset_index()
-    grouped_cpu_usage = grouped_cpu_usage.sort_values(by=["job_id", "node", "pid"])
-    grouped_cpu_usage = grouped_cpu_usage.to_dict(orient="records")
+    # merge the two dfs again on job_id, node and pid
+    grouped_cpu_usage = pd.merge(
+        grouped_cpu_usage,
+        gpu_usage_df,
+        on=["job_id", "node", "command"],
+        how="outer",
+    )
 
-    return grouped_cpu_usage
+    # make df nice again:
+    output_df = pd.DataFrame(columns=all_job_df.columns)
+    for idx, row in grouped_cpu_usage.iterrows():
+        out_row = {}
+        if not np.isfinite(row["gpu_usage"]):
+            out_row["gpu_usage"] = "N/A"
+            out_row["gpu_mem"] = "N/A"
+            out_row["gpu_id"] = "N/A"
+            out_row["cpu_usage"] = row["cpu_usage_x"]
+            out_row["cpu_mem"] = row["cpu_mem_x"]
+            out_row["pid"] = row["pid_x"]
+
+        else:
+            out_row["gpu_usage"] = row["gpu_usage"]
+            out_row["gpu_mem"] = row["gpu_mem"]
+            out_row["gpu_id"] = row["gpu_id"]
+            out_row["cpu_usage"] = row["cpu_usage_y"]
+            out_row["cpu_mem"] = row["cpu_mem_y"]
+            out_row["pid"] = row["pid_y"]
+
+        out_row["job_id"] = row["job_id"]
+        out_row["node"] = row["node"]
+        out_row["command"] = row["command"]
+        output_df = output_df.append(out_row, ignore_index=True)
+
+    output_df = output_df.sort_values(by=["job_id", "node"])
+
+    return output_df
 
 
 def dump_json(content: dict, filename: str):
@@ -268,7 +307,60 @@ def dump_json(content: dict, filename: str):
         json.dump(content, f, indent=4)
 
 
-def main(username, job_id, display_gpu_only, group_by_cmd, min_cpu_usage, refresh_rate, debug_mode):
+def dict_to_df(all_job_dict: dict) -> pandas.DataFrame:
+    # create pandas dataframes for CPU and GPU usage
+    cpu_usage_df = pd.DataFrame()
+    gpu_usage_df = pd.DataFrame()
+
+    for job_id, job_dict in all_job_dict.items():
+        for node in job_dict["Nodes"]:
+            node = node.split("(")[0]
+            for pid in job_dict[node]["CPU usage"]:
+                cpu_usage_df = cpu_usage_df.append(
+                    {
+                        "job_id": job_id,
+                        "node": node,
+                        "pid": pid,
+                        "command": job_dict[node]["CPU usage"][pid]["COMMAND"],
+                        "cpu_usage": float(job_dict[node]["CPU usage"][pid]["%CPU"]),
+                        "cpu_mem": float(job_dict[node]["CPU usage"][pid]["%MEM"]),
+                    },
+                    ignore_index=True,
+                )
+                if job_dict[node]["GPU usage"] is not None:
+                    if pid in job_dict[node]["GPU usage"]:
+                        for gpu_id in job_dict[node]["GPU usage"][pid].keys():
+                            gpu_usage_df = gpu_usage_df.append(
+                                {
+                                    "job_id": job_id,
+                                    "node": node,
+                                    "pid": pid,
+                                    "gpu_id": gpu_id,
+                                    "gpu_usage": float(job_dict[node]["GPU usage"][pid][gpu_id]["sm"]),
+                                    "gpu_mem": float(job_dict[node]["GPU usage"][pid][gpu_id]["mem"]),
+                                },
+                                ignore_index=True,
+                            )
+
+    # merge the two dataframes by job_id, node, pid
+    merged_df = cpu_usage_df.merge(gpu_usage_df, on=["job_id", "node", "pid"], how="left")
+    sorted_df = merged_df.sort_values(by=["job_id", "node", "pid"])
+
+    # replace NaN values with "N/A"
+    sorted_df = sorted_df.fillna("N/A")
+
+    return sorted_df
+
+
+def main(
+    username,
+    job_id,
+    display_gpu_only,
+    group_by_cmd,
+    min_cpu_usage,
+    refresh_rate,
+    debug_mode,
+):
     """Main function."""
 
     all_jobs = get_all_jobs_by_user(username)
@@ -323,12 +415,15 @@ def main(username, job_id, display_gpu_only, group_by_cmd, min_cpu_usage, refres
     if debug_mode:
         dump_json(all_jobs, "all_jobs.json")
 
+    # convert the dict to a dataframe
+    all_jobs = dict_to_df(all_jobs)
+
     # group the CPU usage by command
     if group_by_cmd is not None:
         all_jobs = group_cpu_usage_by_command(all_jobs, reduction=group_by_cmd)
 
     if debug_mode:
-        dump_json(all_jobs, "all_jobs.json")
+        dump_json(all_jobs.to_dict(), "all_jobs.json")
 
     # convert the dataframe to a rich table
     table = create_rich_table(all_jobs, display_gpu_only=display_gpu_only)
@@ -342,9 +437,7 @@ def main(username, job_id, display_gpu_only, group_by_cmd, min_cpu_usage, refres
 
 def cli_entry():
     """Entry point for the CLI."""
-    parser = argparse.ArgumentParser(
-        description="Monitor the CPU and GPU usage of your slurm jobs."
-    )
+    parser = argparse.ArgumentParser(description="Monitor the CPU and GPU usage of your slurm jobs.")
     args = get_args(parser)
     username = args.username
     job_id = args.job_id
@@ -356,13 +449,15 @@ def cli_entry():
 
     print("Starting")
     while True:
-        main(username=username,
-             job_id=job_id,
-             display_gpu_only=display_gpu_only,
-             group_by_cmd=group_by_cmd,
-             min_cpu_usage=min_cpu_usage,
-             refresh_rate=refresh_rate,
-             debug_mode=debug_mode)
+        main(
+            username=username,
+            job_id=job_id,
+            display_gpu_only=display_gpu_only,
+            group_by_cmd=group_by_cmd,
+            min_cpu_usage=min_cpu_usage,
+            refresh_rate=refresh_rate,
+            debug_mode=debug_mode,
+        )
 
 
 if __name__ == "__main__":
