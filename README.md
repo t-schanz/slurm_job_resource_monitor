@@ -26,6 +26,12 @@ To get all the possible options run:
 slurm_job_monitor --help
 ```
 
+The preferred way to use the tool is with the group-by-cmd option to not spam the table when running multi-cpu jobs:
+
+```bash
+slurm_job_monitor --group-by-cmd "max"
+```
+
 ## Assumptions / Preliminary
 
 The tool assumes that:
