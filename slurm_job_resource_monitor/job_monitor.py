@@ -14,6 +14,25 @@ import pandas as pd
 import paramiko
 from rich import get_console, print
 from rich.table import Table
+import argparse
+
+
+def get_args(parser: argparse.ArgumentParser):
+    parser.add_argument("--username", type=str, default=getpass.getuser(),
+                        help="Username for ssh login. If not specified, the current username will be used.")
+    parser.add_argument("--job-id", type=str, default=None,
+                        help="Job ID to monitor. If not specified, all jobs will be monitored.")
+    parser.add_argument("--refresh-rate", type=int, default=5,
+                        help="Refresh rate in seconds.")
+    parser.add_argument("--gpu-only", action="store_true",
+                        help="Only show jobs that use GPUs.")
+    parser.add_argument("--group-by-cmd", action="store_true",
+                        help="Group jobs by command and only show the mean values.")
+    parser.add_argument("--min-cpu-usage", type=float, default=0.1,
+                        help="Minimum CPU usage processes have to have to be shown.")
+
+    return parser.parse_args()
+
 
 
 def get_slurm_job_info_dict(job_id: str) -> dict:
@@ -220,9 +239,17 @@ def create_rich_table(all_job_dict: dict) -> Table:
     return table
 
 
-def main():
+def main(username, job_id, display_gpu_only, group_by_cmd, min_cpu_usage, refresh_rate):
     """Main function."""
-    all_jobs = get_all_jobs_by_user(getpass.getuser())
+
+    all_jobs = get_all_jobs_by_user(username)
+
+    # if a job id is given, only keep that job
+    if job_id is not None:
+        all_jobs = {k: v for k, v in all_jobs.items() if k == job_id}
+        if len(all_jobs) == 0:
+            print(f"No job with id {job_id} found.")
+            time.sleep(refresh_rate)
 
     # only keep jobs that are running
     all_jobs = {k: v for k, v in all_jobs.items() if v["STATE"] == "RUNNING"}
@@ -247,10 +274,10 @@ def main():
             # ssh into the node
             ssh = paramiko.SSHClient()
             ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            ssh.connect(node, username=getpass.getuser())
+            ssh.connect(node, username=username)
 
             # get the CPU usage
-            cpu_usage = get_cpu_usage_of_current_node(getpass.getuser(), ssh)
+            cpu_usage = get_cpu_usage_of_current_node(username, ssh)
             all_jobs[job_id][node]["CPU usage"] = cpu_usage
 
             # get the GPU usage
@@ -267,17 +294,26 @@ def main():
     console.clear()
 
     console.print(table)
-    time.sleep(2)
+    time.sleep(refresh_rate)
 
 
 def cli_entry():
     """Entry point for the CLI."""
+    parser = argparse.ArgumentParser(
+        description="Monitor the CPU and GPU usage of your slurm jobs."
+    )
+    args = get_args(parser)
+    username = args.username
+    job_id = args.job_id
+    refresh_rate = args.refresh_rate
+    display_gpu_only = args.gpu_only
+    group_by_cmd = args.group_by_cmd
+    min_cpu_usage = args.min_cpu_usage
+
     print("Starting")
     while True:
-        main()
+        main(username=username, job_id=job_id, display_gpu_only=display_gpu_only, group_by_cmd=group_by_cmd, min_cpu_usage=min_cpu_usage, refresh_rate=refresh_rate)
 
 
 if __name__ == "__main__":
-    print("Starting")
-    while True:
-        main()
+    cli_entry()
