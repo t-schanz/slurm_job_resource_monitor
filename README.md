@@ -20,6 +20,12 @@ On a slurm managed cluster, run the following command to monitor your jobs:
 slurm_job_monitor
 ```
 
+To get all the possible options run:
+
+```bash
+slurm_job_monitor --help
+```
+
 ## Assumptions / Preliminary
 
 The tool assumes that:
