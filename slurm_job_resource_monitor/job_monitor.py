@@ -295,7 +295,7 @@ def group_cpu_usage_by_command(all_job_df: pandas.DataFrame, reduction="mean") -
         out_row["job_id"] = row["job_id"]
         out_row["node"] = row["node"]
         out_row["command"] = row["command"]
-        output_df = output_df.append(out_row, ignore_index=True)
+        output_df = pd.concat([output_df, pd.DataFrame(out_row, index=[0])])
 
     output_df = output_df.sort_values(by=["job_id", "node"])
 
