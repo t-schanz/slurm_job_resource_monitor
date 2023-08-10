@@ -206,8 +206,8 @@ def create_rich_table(all_job_df: pd.DataFrame, display_gpu_only: bool = False) 
         display_gpu_only (bool, optional): If True, only jobs with gpu usage will be displayed. Defaults to False.
     """
 
-    # convert all values to string with 2 decimal places
-    all_job_df = all_job_df.applymap(lambda x: f"{x:.2f}" if isinstance(x, float) else x)
+    # convert all values to string with 0 decimal places
+    all_job_df = all_job_df.applymap(lambda x: f"{x:.0f}" if isinstance(x, float) else x)
 
     now = dt.now().strftime("%H:%M:%S")
     table = Table(title=f"Slurm Job Usage Monitor - {now}")
@@ -235,10 +235,10 @@ def create_rich_table(all_job_df: pd.DataFrame, display_gpu_only: bool = False) 
             row["gpu_id"],
             row["pid"],
             row["command"],
-            row["cpu_usage"],
-            row["cpu_mem"],
-            row["gpu_usage"],
-            row["gpu_mem"],
+            row["cpu_usage"] + " %",
+            row["cpu_mem"] + " %",
+            row["gpu_usage"] + " %",
+            row["gpu_mem"] + " %",
         )
         last_node = row["node"]
 
