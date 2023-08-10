@@ -4,6 +4,7 @@ It uses rich to display the status of all jobs in a table. It will ssh into all 
 usage
 """
 
+import argparse
 import getpass
 import subprocess
 import time
@@ -14,7 +15,6 @@ import pandas as pd
 import paramiko
 from rich import get_console, print
 from rich.table import Table
-import argparse
 
 
 def get_args(parser: argparse.ArgumentParser):
@@ -26,13 +26,13 @@ def get_args(parser: argparse.ArgumentParser):
                         help="Refresh rate in seconds.")
     parser.add_argument("--gpu-only", action="store_true",
                         help="Only show jobs that use GPUs.")
-    parser.add_argument("--group-by-cmd", action="store_true",
-                        help="Group jobs by command and only show the mean values.")
+    parser.add_argument("--group-by-cmd", type=str, default=None,
+                        help="Group jobs per node that have the same command. If not specified all jobs are displayed. "
+                             "Possible options are `mean`, `max`, `min`.")
     parser.add_argument("--min-cpu-usage", type=float, default=0.1,
                         help="Minimum CPU usage processes have to have to be shown.")
 
     return parser.parse_args()
-
 
 
 def get_slurm_job_info_dict(job_id: str) -> dict:
@@ -83,11 +83,13 @@ def get_gpu_usage_of_current_node(this_node: paramiko.SSHClient) -> Optional[dic
     return gpu_return
 
 
-def get_cpu_usage_of_current_node(user_id: str, this_node: paramiko.SSHClient) -> dict:
+def get_cpu_usage_of_current_node(user_id: str, this_node: paramiko.SSHClient, min_cpu_usage: float = 0.1) -> dict:
     """Get the CPU usage of all CPUs on the current node.
 
     Args:
         user_id (str): User ID of the user to filter for.
+        this_node (paramiko.SSHClient): SSHClient object of the current node.
+        min_cpu_usage (float): Minimum CPU usage processes must have to be shown.
 
     Returns:
         dict: Nested dictionary with CPU usage of all CPUs on the current node. Outer keys are the CPU IDs, inner keys
@@ -114,12 +116,13 @@ def get_cpu_usage_of_current_node(user_id: str, this_node: paramiko.SSHClient) -
         # on the last key combine all remaining values into one
         for key in cpu_keys:
             if key == "COMMAND":
-                return_usage[usage[1]][key] = " ".join(usage[cpu_keys.index(key) :]).replace("\\_ ", "").strip()
+                return_usage[usage[1]][key] = " ".join(usage[cpu_keys.index(key) :]).replace(
+                    "\\_ ", "").strip()
             else:
                 return_usage[usage[1]][key] = usage[cpu_keys.index(key)]
 
     # filter out processes that have a load of 0.0
-    return_usage = {k: v for k, v in return_usage.items() if float(v["%CPU"]) > 0.0}
+    return_usage = {k: v for k, v in return_usage.items() if float(v["%CPU"]) >= min_cpu_usage}
 
     # again filter out processes that are not the user's (leftovers could exist due to jobs with names that contain the
     # user's name)
@@ -152,7 +155,7 @@ def get_all_jobs_by_user(user_id: str) -> dict:
     all_jobs = [x for x in all_jobs if x != ""]
     all_jobs = [x.split() for x in all_jobs if " " in x]
 
-    # in x0 only the names are stored so we use these as dict keys
+    # in x0 only the names are stored, so we use these as dict keys
     dict_keys = all_jobs.pop(0)
 
     return_jobs = {}
@@ -161,7 +164,7 @@ def get_all_jobs_by_user(user_id: str) -> dict:
     return return_jobs
 
 
-def create_rich_table(all_job_dict: dict) -> Table:
+def create_rich_table(all_job_dict: dict, display_gpu_only: bool = False) -> Table:
     """
     Create a rich table Like the following:
 
@@ -184,6 +187,7 @@ def create_rich_table(all_job_dict: dict) -> Table:
 
     Args:
         all_job_dict (dict): The job dict containing all the job info.
+        display_gpu_only (bool, optional): If True, only jobs with gpu usage will be displayed. Defaults to False.
     """
     now = dt.now().strftime("%H:%M:%S")
     table = Table(title=f"Slurm Job Usage Monitor - {now}")
@@ -224,19 +228,46 @@ def create_rich_table(all_job_dict: dict) -> Table:
                                 gpu_mem + " %",
                             )
                     else:
-                        table.add_row(
-                            job_id,
-                            node,
-                            gpu_id,
-                            pid,
-                            job_dict[node]["CPU usage"][pid]["COMMAND"],
-                            job_dict[node]["CPU usage"][pid]["%CPU"] + " %",
-                            job_dict[node]["CPU usage"][pid]["%MEM"] + " %",
-                            gpu_usage,
-                            gpu_mem,
-                        )
+                        if not display_gpu_only:
+                            table.add_row(
+                                job_id,
+                                node,
+                                gpu_id,
+                                pid,
+                                job_dict[node]["CPU usage"][pid]["COMMAND"],
+                                job_dict[node]["CPU usage"][pid]["%CPU"] + " %",
+                                job_dict[node]["CPU usage"][pid]["%MEM"] + " %",
+                                gpu_usage,
+                                gpu_mem,
+                            )
 
     return table
+
+
+def group_cpu_usage_by_command(all_job_dict, reduction="mean") -> dict:
+    """Group the CPU usage by command and take the mean"""
+
+    # create a pandas dataframe from the all_job_dict
+    df = pd.DataFrame.from_dict(
+        {
+            (i, j, k): all_job_dict[i][j][k]
+            for i in all_job_dict.keys()
+            for j in all_job_dict[i].keys()
+            for k in all_job_dict[i][j].keys()
+        },
+        orient="index",
+    ).reset_index()
+    df = df.rename(columns={"level_0": "job_id", "level_1": "node", "level_2": "pid"})
+    df = df[["job_id", "node", "pid", "COMMAND", "%CPU", "%MEM"]]
+    df["%CPU"] = df["%CPU"].str.replace("%", "").astype(float)
+    df["%MEM"] = df["%MEM"].str.replace("%", "").astype(float)
+
+    # group by command and apply the reduction
+    grouped_cpu_usage = df.groupby("COMMAND").agg(reduction).reset_index()
+    grouped_cpu_usage = grouped_cpu_usage.sort_values(by=["job_id", "node", "pid"])
+    grouped_cpu_usage = grouped_cpu_usage.to_dict(orient="records")
+
+    return grouped_cpu_usage
 
 
 def main(username, job_id, display_gpu_only, group_by_cmd, min_cpu_usage, refresh_rate):
@@ -277,7 +308,7 @@ def main(username, job_id, display_gpu_only, group_by_cmd, min_cpu_usage, refres
             ssh.connect(node, username=username)
 
             # get the CPU usage
-            cpu_usage = get_cpu_usage_of_current_node(username, ssh)
+            cpu_usage = get_cpu_usage_of_current_node(username, ssh, min_cpu_usage=min_cpu_usage)
             all_jobs[job_id][node]["CPU usage"] = cpu_usage
 
             # get the GPU usage
@@ -287,8 +318,12 @@ def main(username, job_id, display_gpu_only, group_by_cmd, min_cpu_usage, refres
             # close the ssh connection
             ssh.close()
 
+    # group the CPU usage by command
+    if group_by_cmd is not None:
+        all_jobs = group_cpu_usage_by_command(all_jobs, reduction=group_by_cmd)
+
     # convert the dataframe to a rich table
-    table = create_rich_table(all_jobs)
+    table = create_rich_table(all_jobs, display_gpu_only=display_gpu_only)
 
     console = get_console()
     console.clear()
@@ -312,7 +347,12 @@ def cli_entry():
 
     print("Starting")
     while True:
-        main(username=username, job_id=job_id, display_gpu_only=display_gpu_only, group_by_cmd=group_by_cmd, min_cpu_usage=min_cpu_usage, refresh_rate=refresh_rate)
+        main(username=username,
+             job_id=job_id,
+             display_gpu_only=display_gpu_only,
+             group_by_cmd=group_by_cmd,
+             min_cpu_usage=min_cpu_usage,
+             refresh_rate=refresh_rate)
 
 
 if __name__ == "__main__":
