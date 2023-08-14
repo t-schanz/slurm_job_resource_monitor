@@ -465,17 +465,34 @@ def cli_entry():
     min_cpu_usage = args.min_cpu_usage
     debug_mode = args.debug
 
+    trial_counter = 0
     print("Starting")
     while True:
-        main(
-            username=username,
-            job_id=job_id,
-            display_gpu_only=display_gpu_only,
-            group_by_cmd=group_by_cmd,
-            min_cpu_usage=min_cpu_usage,
-            refresh_rate=refresh_rate,
-            debug_mode=debug_mode,
-        )
+        try:
+            main(
+                username=username,
+                job_id=job_id,
+                display_gpu_only=display_gpu_only,
+                group_by_cmd=group_by_cmd,
+                min_cpu_usage=min_cpu_usage,
+                refresh_rate=refresh_rate,
+                debug_mode=debug_mode,
+            )
+        except KeyboardInterrupt:
+            print("Exiting")
+            break
+        except Exception as exc:
+            trial_counter += 1
+            print(f"Trial {trial_counter} / 10 failed. Retrying in {refresh_rate} seconds.")
+            time.sleep(refresh_rate)
+
+            if trial_counter >= 10:
+                print("Too many failed trials. Exiting.")
+                raise exc
+
+            continue
+
+        trial_counter = 0
 
 
 if __name__ == "__main__":
