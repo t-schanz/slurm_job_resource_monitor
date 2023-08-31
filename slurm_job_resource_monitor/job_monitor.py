@@ -338,6 +338,10 @@ def dict_to_df(all_job_dict: dict) -> pandas.DataFrame:
                     ignore_index=True,
                 )
                 if job_dict[node]["GPU usage"] is not None:
+                    if job_dict[node]["GPU usage"][pid][gpu_id]["sm"] == "-":
+                        job_dict[node]["GPU usage"][pid][gpu_id]["sm"] = "nan"
+                    if job_dict[node]["GPU usage"][pid][gpu_id]["mem"] == "-":
+                        job_dict[node]["GPU usage"][pid][gpu_id]["mem"] = "nan"
                     if pid in job_dict[node]["GPU usage"]:
                         for gpu_id in job_dict[node]["GPU usage"][pid].keys():
                             gpu_usage_df = pd.concat(
