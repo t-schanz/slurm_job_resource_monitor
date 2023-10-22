@@ -7,6 +7,7 @@ usage.
 import argparse
 import getpass
 import json
+import logging
 import subprocess
 import time
 from datetime import datetime as dt
@@ -17,6 +18,8 @@ import pandas as pd
 import paramiko
 from rich import get_console, print
 from rich.table import Table
+
+logging.basicConfig(level=logging.INFO)
 
 
 def get_args(parser: argparse.ArgumentParser):
@@ -177,6 +180,7 @@ def get_all_jobs_by_user(user_id: str) -> dict:
     return_jobs = {}
     for job in all_jobs:
         return_jobs[job[0]] = {k: v for k, v in zip(dict_keys, job)}
+        logging.debug(f"Job {job[0]}: {return_jobs[job[0]]}")
     return return_jobs
 
 
@@ -338,12 +342,12 @@ def dict_to_df(all_job_dict: dict) -> pandas.DataFrame:
                     ignore_index=True,
                 )
                 if job_dict[node]["GPU usage"] is not None:
-                    if job_dict[node]["GPU usage"][pid][gpu_id]["sm"] == "-":
-                        job_dict[node]["GPU usage"][pid][gpu_id]["sm"] = "nan"
-                    if job_dict[node]["GPU usage"][pid][gpu_id]["mem"] == "-":
-                        job_dict[node]["GPU usage"][pid][gpu_id]["mem"] = "nan"
                     if pid in job_dict[node]["GPU usage"]:
                         for gpu_id in job_dict[node]["GPU usage"][pid].keys():
+                            if job_dict[node]["GPU usage"][pid][gpu_id]["sm"] == "-":
+                                job_dict[node]["GPU usage"][pid][gpu_id]["sm"] = "nan"
+                            if job_dict[node]["GPU usage"][pid][gpu_id]["mem"] == "-":
+                                job_dict[node]["GPU usage"][pid][gpu_id]["mem"] = "nan"
                             gpu_usage_df = pd.concat(
                                 [
                                     gpu_usage_df,
@@ -421,13 +425,16 @@ def main(
             # ssh into the node
             ssh = paramiko.SSHClient()
             ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            logging.debug(f"Connecting to {node}, with username: {username}")
             ssh.connect(node, username=username)
 
             # get the CPU usage
+            logging.debug(f"Getting CPU usage of {node}")
             cpu_usage = get_cpu_usage_of_current_node(username, ssh, min_cpu_usage=min_cpu_usage)
             all_jobs[job_id][node]["CPU usage"] = cpu_usage
 
             # get the GPU usage
+            logging.debug(f"Getting GPU usage of {node}")
             gpu_usage = get_gpu_usage_of_current_node(ssh)
             all_jobs[job_id][node]["GPU usage"] = gpu_usage
 
@@ -442,6 +449,7 @@ def main(
 
     # group the CPU usage by command
     if group_by_cmd is not None:
+        logging.debug(f"Grouping by command with reduction {group_by_cmd}")
         all_jobs = group_cpu_usage_by_command(all_jobs, reduction=group_by_cmd)
 
     if debug_mode:
@@ -468,6 +476,11 @@ def cli_entry():
     group_by_cmd = args.group_by_cmd
     min_cpu_usage = args.min_cpu_usage
     debug_mode = args.debug
+
+    if debug_mode:
+        logging.basicConfig(level=logging.DEBUG)
+        logging.debug("Debug mode activated.")
+        logging.info("Debug mode activated.")
 
     trial_counter = 0
     print("Starting")
