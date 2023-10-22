@@ -22,6 +22,7 @@ from rich.table import Table
 logging.basicConfig(level=logging.INFO)
 console_logger = logging.getLogger(__name__)
 console_logger.setLevel(logging.INFO)
+console_logger.addHandler(logging.StreamHandler())
 
 
 def get_args(parser: argparse.ArgumentParser):
