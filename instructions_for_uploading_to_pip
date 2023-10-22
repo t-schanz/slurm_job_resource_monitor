@@ -1,0 +1,4 @@
+1. Create a new tag with the format `vX.Y.Z` where `X.Y.Z` is the version number.
+2. Push the tag to the repository.
+3. Run `python -m build` to build the package.
+4. Run `twine upload dist/*` to upload the package to PyPI.
