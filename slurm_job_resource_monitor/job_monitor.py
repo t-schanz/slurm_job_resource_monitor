@@ -184,6 +184,23 @@ def get_all_jobs_by_user(user_id: str) -> dict:
     for job in all_jobs:
         return_jobs[job[0]] = {k: v for k, v in zip(dict_keys, job)}
         console_logger.debug(f"Job {job[0]}: {return_jobs[job[0]]}")
+
+    # if nodes contain lists like g[023-024], expand them to g023, g024
+    for job_id, job_dict in return_jobs.items():
+        if "[" in job_dict["NODELIST(REASON)"]:
+            _nodes = job_dict["NODELIST(REASON)"].split(",")
+            nodes = []
+            for node in _nodes:
+                if "[" in node:
+                    letter = node.split("[")[0]
+                    numbers = node.split("[")[1].split("]")[0]
+                    numbers = numbers.split("-")
+                    len_numbers_str = len(numbers[0])
+                    for number in range(int(numbers[0]), int(numbers[1]) + 1):
+                        nodes.append(f"{letter}{str(number).zfill(len_numbers_str)}")
+                else:
+                    nodes.append(node)
+            return_jobs[job_id]["NODELIST(REASON)"] = ",".join(nodes)
     return return_jobs
 
 
