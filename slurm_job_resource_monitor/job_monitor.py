@@ -60,7 +60,7 @@ def get_args(parser: argparse.ArgumentParser):
     return parser.parse_args()
 
 
-def get_gpu_usage_of_current_node(this_node: paramiko.SSHClient) -> dict:
+def get_gpu_usage_of_current_node(this_node: paramiko.SSHClient) -> dict or None:
     """Get the GPU usage and memory usage of all GPUs seperated by process ID on the current node, using nvidia-smi.
 
     Args:
@@ -75,7 +75,12 @@ def get_gpu_usage_of_current_node(this_node: paramiko.SSHClient) -> dict:
     gpu_usage = gpu_usage.read().decode("utf-8")
     gpu_usage = gpu_usage.split("\n")
     gpu_usage = [x.split() for x in gpu_usage if x != ""]
-    gpu_keys = gpu_usage.pop(0)[1:]
+    try:
+        gpu_keys = gpu_usage.pop(0)[1:]
+    except IndexError:
+        # when no GPUs are on the node, gpu_usage is empty
+        return
+
     gpu_usage = gpu_usage[1:]
     # if not gpu_usage:
     #     return None
