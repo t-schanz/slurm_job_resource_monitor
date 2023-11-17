@@ -391,7 +391,11 @@ def dict_to_df(all_job_dict: dict) -> pandas.DataFrame:
                             )
 
     # merge the two dataframes by job_id, node, pid
-    merged_df = cpu_usage_df.merge(gpu_usage_df, on=["job_id", "node", "pid"], how="left")
+    if gpu_usage_df.empty:
+        merged_df = cpu_usage_df
+    else:
+        merged_df = cpu_usage_df.merge(gpu_usage_df, on=["job_id", "node", "pid"], how="left")
+
     sorted_df = merged_df.sort_values(by=["job_id", "node", "pid"])
 
     # replace NaN values with "N/A"
