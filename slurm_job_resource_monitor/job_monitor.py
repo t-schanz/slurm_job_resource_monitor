@@ -104,6 +104,25 @@ def get_gpu_usage_of_current_node(this_node: paramiko.SSHClient) -> dict or None
     return gpu_return
 
 
+def expand_node_list(node_list):
+    nodes = []
+    for node in node_list:
+        if "[" in node:
+            letter = node.split("[")[0]
+            numbers = node.split("[")[1].split("]")[0].split(",")
+            for number in numbers:
+                if "-" in number:
+                    start, end = number.split("-")
+                    len_numbers_str = len(start)
+                    for num in range(int(start), int(end) + 1):
+                        nodes.append(f"{letter}{str(num).zfill(len_numbers_str)}")
+                else:
+                    nodes.append(f"{letter}{number}")
+        else:
+            nodes.append(node)
+    return nodes
+
+
 def get_cpu_usage_of_current_node(user_id: str, this_node: paramiko.SSHClient, min_cpu_usage: float = 0.1) -> dict:
     """Get the CPU usage of all CPUs on the current node.
 
@@ -205,6 +224,14 @@ def get_all_jobs_by_user(user_id: str) -> dict:
                 else:
                     nodes.append(node)
             return_jobs[job_id]["NODELIST(REASON)"] = ",".join(nodes)
+
+    # if nodes contain lists like g[023-024], or g[023,025], expand them to g023, g024, g025
+    for job_id, job_dict in return_jobs.items():
+        if "[" in job_dict["NODELIST(REASON)"]:
+            _nodes = job_dict["NODELIST(REASON)"].split(",")
+            expanded_nodes = expand_node_list(_nodes)
+            return_jobs[job_id]["NODELIST(REASON)"] = ",".join(expanded_nodes)
+
     return return_jobs
 
 
